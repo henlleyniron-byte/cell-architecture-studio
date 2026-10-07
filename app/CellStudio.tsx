@@ -8,6 +8,8 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 type CellKey = "plant" | "animal" | "prokaryote";
 type ProcessKey = "protein" | "atp" | "water";
 
+const RECALL_SECONDS = 90;
+
 type Organelle = {
   id: string;
   name: string;
@@ -780,6 +782,8 @@ export default function CellStudio() {
   const [markingOpen, setMarkingOpen] = useState(false);
   const [confidence, setConfidence] = useState(2);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [recallSeconds, setRecallSeconds] = useState(RECALL_SECONDS);
+  const [recallRunning, setRecallRunning] = useState(false);
 
   const model = CELL_MODELS[cell];
   const selected = model.organelles.find((item) => item.id === selectedId) ?? model.organelles[0];
@@ -793,6 +797,8 @@ export default function CellStudio() {
     }
     setIsolate(false);
     setMarkingOpen(false);
+    setRecallSeconds(RECALL_SECONDS);
+    setRecallRunning(false);
   }, [cell, model.organelles, selectedId]);
 
   useEffect(() => {
@@ -810,10 +816,36 @@ export default function CellStudio() {
     return () => window.clearInterval(timer);
   }, [playing, speed]);
 
+  useEffect(() => {
+    if (!recallRunning) return;
+    const timer = window.setInterval(() => {
+      setRecallSeconds((value) => {
+        if (value <= 1) {
+          setRecallRunning(false);
+          return 0;
+        }
+        return value - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [recallRunning]);
+
   const recallPrompt = useMemo(() => {
     if (cell === "prokaryote") return `State two structural features of the ${selected.name} and link one feature to its function.`;
     return `Using precise A/L terminology, explain how the structure of the ${selected.name} supports its function.`;
   }, [cell, selected.name]);
+
+  const recallClock = `${String(Math.floor(recallSeconds / 60)).padStart(2, "0")}:${String(recallSeconds % 60).padStart(2, "0")}`;
+
+  const resetRecallTimer = () => {
+    setRecallSeconds(RECALL_SECONDS);
+    setRecallRunning(false);
+  };
+
+  const revealMarkingPoints = () => {
+    setRecallRunning(false);
+    setMarkingOpen((value) => !value);
+  };
 
   const chooseCell = (next: CellKey) => {
     setCell(next);
@@ -1013,7 +1045,7 @@ export default function CellStudio() {
         <article className="recall-card panel">
           <div className="section-title-row">
             <div><span className="eyebrow">90-SECOND ACTIVE RECALL</span><h2>Close the labels. Produce the marks.</h2></div>
-            <span className="timer">01:30</span>
+            <span className="timer" aria-live="polite">{recallClock}</span>
           </div>
           <div className="prompt-box">
             <span>STRUCTURE–FUNCTION PROMPT</span>
@@ -1021,7 +1053,11 @@ export default function CellStudio() {
           </div>
           <textarea aria-label="Type your recall answer" placeholder="Type or say your answer before revealing the marking points…" />
           <div className="recall-actions">
-            <button className="primary" onClick={() => setMarkingOpen((value) => !value)}>{markingOpen ? "Hide marking points" : "Reveal marking points"}</button>
+            <button className="primary" onClick={() => setRecallRunning((value) => !value)} disabled={recallSeconds === 0}>
+              {recallRunning ? "Pause timer" : recallSeconds === RECALL_SECONDS ? "Start 90 s" : recallSeconds === 0 ? "Time complete" : "Resume timer"}
+            </button>
+            <button onClick={resetRecallTimer}>Reset 90 s</button>
+            <button onClick={revealMarkingPoints}>{markingOpen ? "Hide marking points" : "Reveal marking points"}</button>
             <button onClick={() => setSelectedId(model.organelles[(model.organelles.indexOf(selected) + 1) % model.organelles.length].id)}>Next structure →</button>
           </div>
           {markingOpen && (
